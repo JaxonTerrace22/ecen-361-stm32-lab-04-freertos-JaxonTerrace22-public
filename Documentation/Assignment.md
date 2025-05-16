@@ -38,11 +38,11 @@ With that project working, power-down the Nucleo, add on the multi-function shie
 
 * Which light blinks on the multiboard (i.e., Dx)?
   
-  * LD2 blinks while LD1 stays on
+  * D1 
 
 * Are the multiboard LED and main Nucleo LED in sync with one another (i.e., do they turn on and off at the same time with same logic)? Why or why not?
   
-  * No because they have different delay timings. However, in the new code, the Nucleo board LED doesn't toggle at all, instead powering the D1 led on the shield
+  * No because they have different delay timings. Only one LED toggles/stays on at a time. However, in the new code, the Nucleo board LED doesn't toggle at all, instead powering the D1 led on the shield
 
 Finally, locate the process in the code where the on-board light is toggled. Look for:
 
@@ -72,15 +72,27 @@ Note that to add a new task in FreeRTOS, three things have to be coded. These ar
 
 1. `/******* Task-Creation-Part-A *********/`
    
-   * Declare a prototype for the function (this is a requirement for the C-compiler to link)
+ void D2_Task(void *argument);		// This is the default task working at the beginning of the lab
+
+/************** STUDENT EDITABLE HERE STARTS HERE *****
+ *    You'll want to make your own private function prototypes for the other tasks you're adding:
+ *    D3 blink task
+ *    D4 blink task
+ *    7-segment counting task
+ ************** STUDENT EDITABLE HERE ENDS HERE *******/
+void D3_Task(void *argument);
+void D4_Task(void *argument);
+void SevenSeg_Task(void *argument);
+
+/* USER CODE END PFP */
 
 2. `/******* Task-Creation-Part-B *********/`
-   
-   * Write the task process itself
+   osKernelInitialize();
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
 3. `/******* Task-Creation-Part-C *********/`
    
-   * Launch the task by putting it in the scheduling queue
+   osThreadNew(D2_Task, NULL, &defaultTask_attributes);
 
 Note that the “StartDefaultTask “ is required when the system is built. That task currently blinks the D1_LED at 1000mS. Using the single task in the code as a prototype (“StartDefaultTask”), create three more tasks that blink:
 
@@ -91,21 +103,31 @@ Note that the “StartDefaultTask “ is required when the system is built. That
 ## Part 2.2: Seven Segment Display Counter (5pts)
 
 Now add one final task that display a counter on the Seven-Segment LED display. Count up from 0, and increment the count once per 1500 mS.
+void SevenSeg_Task(void *argument)
+{
+    uint16_t count = 0;
+    while(true)
+    {
+        MultiFunctionShield_Display(count);
+        count++;
+        osDelay(1500); 
+    }
+}
+
 
 ## Extra Credit Ideas (5 pts maximum)
 
 * Stop one of the LED processes when the digit count gets to 20. Explain how you did it. Did you use a global variable? Or read about and use the oSSuspend task API?
   
-  * [*answer here*]
+  Once the counter reached 20, I had a global variable vTaskSuspend, which stopped D2 from blinking but not the other LED's
 
 * Explore the differences between the two “delay” calls: HAL_Delay and OsDelay
-  
-  * [*answer here*]
+  HAL_Delay just eats up CPU time because it stops everything and waits, osDelay lets background processes run while a task is stopped.
 
 * Eliminate the SevenSegment refresh routine, currently based off timer17, so that it refreshs like any other process to give the appearance of all 4 digits being turned on at the same time. Explain what you did.
   
-  * [*answer here*]
+  Basically I made a new task that would refresh the display that would start the cycle over every 5ms, turning all four LEDs on, which replaces the Timer17 with a regular task, getting rid of that interrupt, so to speak
 
 * Use one of the push buttons from an earlier lab to set up an interrupt such that it doubles the count frequency of the 7-Segment LED counter to go faster and faster.   Explain how you did it.
   
-  * [*answer here*]
+  * I used one of the old push buttons as an interrupt that would halve the delay time in counter task. Doing this causes the button to speed up the more the button is press by half the time
