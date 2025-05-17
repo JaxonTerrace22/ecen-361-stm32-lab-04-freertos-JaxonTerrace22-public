@@ -114,6 +114,34 @@ void SevenSeg_Task(void *argument)
     }
 }
 
+void D3_Task(void *argument)
+{
+    while(true)
+    {
+        HAL_GPIO_TogglePin(LED_D3_GPIO_Port, LED_D3_Pin);
+        osDelay(D1_time); // 250 ms
+    }
+}
+
+void D4_Task(void *argument)
+{
+    while(true)
+    {
+        HAL_GPIO_TogglePin(LED_D4_GPIO_Port, LED_D4_Pin);
+        osDelay(D1_time / 2); // 125 ms
+    }
+}
+
+void SevenSeg_Task(void *argument)
+{
+    uint16_t count = 0;
+    while(true)
+    {
+        MultiFunctionShield_Display(count);
+        count++;
+        osDelay(1500); // 1500 ms
+    }
+}
 
 ## Extra Credit Ideas (5 pts maximum)
 
