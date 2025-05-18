@@ -38,7 +38,6 @@
 /* USER CODE BEGIN Includes */
 #include "MultiFunctionShield.h"
 #include <stdbool.h>
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,11 +47,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define D1_time 250
-#define D2_time D1_time * 2
-#define D3_time D2_time * 2
-#define D4_time D3_time * 2
-#define count_time 4000
+#define D2_TIME 500   // D2 blinks every 500ms
+#define D3_TIME 250   // D3 blinks every 250ms
+#define D4_TIME 125   // D4 blinks every 125ms
+#define SEVENSEG_TIME 1500 // 7-segment increments every 1500ms
+#define REFRESH_TIME 5 // 7-segment refresh every 5ms (extra credit)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -73,7 +72,9 @@ const osThreadAttr_t defaultTask_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
-
+osThreadId_t D2TaskHandle; // Handle for D2 task (for suspension)
+volatile uint16_t sevenSegCount = 0; // Global 7-segment counter
+volatile uint32_t sevenSegDelay = SEVENSEG_TIME; // Adjustable delay for 7-segment
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -84,21 +85,16 @@ static void MX_TIM17_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-
 /*************  Task-Creation-Part-A ******************/
 /******** put any addtional task declarations in here ***********/
-void D2_Task(void *argument);		// This is the default task working at the beginning of the lab
+void D2_Task(void *argument); // Default task at lab start
 
-
-/************** STUDENT EDITABLE HERE STARTS HERE *****
- *    You'll want to make your own private function prototypes for the other tasks you're adding:
- *    D3 blink task
- *    D4 blink task
- *    7-segment counting task
- ************** STUDENT EDITABLE HERE ENDS HERE *******
- */
-
-
+/************** STUDENT EDITABLE HERE STARTS HERE *****/
+void D3_Task(void *argument);
+void D4_Task(void *argument);
+void SevenSeg_Task(void *argument);
+void SevenSeg_Refresh_Task(void *argument); // Extra credit: replace TIM17
+/************** STUDENT EDITABLE HERE ENDS HERE *******/
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,7 +109,6 @@ void D2_Task(void *argument);		// This is the default task working at the beginn
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  // TaskHandle_t xHandle = NULL;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -122,14 +117,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -138,8 +131,8 @@ int main(void)
   MX_TIM17_Init();
   /* USER CODE BEGIN 2 */
   MultiFunctionShield_Clear();
-  Clear_LEDs();	// Note that D1 is never quite off because the Nucleo Board Built in LED
-  HAL_TIM_Base_Start_IT(&htim17);  // LED SevenSeg cycle thru them
+  Clear_LEDs(); // Clear all LEDs (D1 unused due to Nucleo conflict)
+  // TIM17 disabled for extra credit; refresh handled by task
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -166,41 +159,17 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /*
-   *************  Task-Creation-Part-C *****************
-   *
-   * Here's where the task ("thread")  gets put into the scheduler Queue
-   */
-
-
-	//xTaskCreate(D2_Task,
-				//"D2_Blink",        /* Text name for the task. */
-	            //1000,      /* Stack size in words, not bytes. */
-	            //( void * ) 1,    /* Parameter passed into the task. */
-				//tskIDLE_PRIORITY,/* Priority at which the task is created. */
-	            //&xHandle );
-
-	osThreadNew(D2_Task, "D2 Blink", &defaultTask_attributes);	// This launches the
-	/*
-	 *
-     ************** STUDENT EDITABLE HERE STARTS HERE *****
-     ************  Task-Creation-Part-C *****************
-     ************  Here's where the task gets launched into the OS queue of tasks
-     ************  See the above one for the D2_Task
-
-
-
-	 ************** STUDENT EDITABLE HERE ENDS HERE *******
-	 */
-
-
-  /* add threads, ... */
+  /*************  Task-Creation-Part-C *****************/
+  D2TaskHandle = osThreadNew(D2_Task, NULL, &defaultTask_attributes);
+  osThreadNew(D3_Task, NULL, &defaultTask_attributes);
+  osThreadNew(D4_Task, NULL, &defaultTask_attributes);
+  osThreadNew(SevenSeg_Task, NULL, &defaultTask_attributes);
+  osThreadNew(SevenSeg_Refresh_Task, NULL, &defaultTask_attributes);
+  /************** STUDENT EDITABLE HERE ENDS HERE *******/
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
-  /* add events, ... */
-	MultiFunctionShield_Display (4444);  // Lab-04 -- show all 4444's to start
-
+  MultiFunctionShield_Display(4444); // Lab-04: show 4444 to start
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -212,9 +181,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
-
   }
   /* USER CODE END 3 */
 }
@@ -275,13 +242,10 @@ void SystemClock_Config(void)
   */
 static void MX_TIM17_Init(void)
 {
-
   /* USER CODE BEGIN TIM17_Init 0 */
-
   /* USER CODE END TIM17_Init 0 */
 
   /* USER CODE BEGIN TIM17_Init 1 */
-
   /* USER CODE END TIM17_Init 1 */
   htim17.Instance = TIM17;
   htim17.Init.Prescaler = 800-1;
@@ -295,9 +259,7 @@ static void MX_TIM17_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM17_Init 2 */
-
   /* USER CODE END TIM17_Init 2 */
-
 }
 
 /**
@@ -307,13 +269,10 @@ static void MX_TIM17_Init(void)
   */
 static void MX_USART2_UART_Init(void)
 {
-
   /* USER CODE BEGIN USART2_Init 0 */
-
   /* USER CODE END USART2_Init 0 */
 
   /* USER CODE BEGIN USART2_Init 1 */
-
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 115200;
@@ -330,9 +289,7 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
-
   /* USER CODE END USART2_Init 2 */
-
 }
 
 /**
@@ -441,46 +398,66 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
-// Callback: timer has rolled over
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-// Check which version of the timer triggered this callback and toggle the right LED
-/** This timer has to be here to cycle thru the 7-Seg LED displays **/
-  if (htim == &htim17 )
+  if (GPIO_Pin == Button_1_Pin) // Extra credit: Double 7-segment counter frequency
   {
-	  MultiFunctionShield__ISRFunc();
+    sevenSegDelay /= 2; // Halve delay to double frequency
+    if (sevenSegDelay < 100) sevenSegDelay = SEVENSEG_TIME; // Reset to default if too fast
   }
 }
 
+void D2_Task(void *argument)
+{
+  while(true)
+  {
+    HAL_GPIO_TogglePin(LED_D2_GPIO_Port, LED_D2_Pin);
+    osDelay(D2_TIME);
+  }
+}
 
+/************** STUDENT EDITABLE HERE STARTS HERE *****/
+void D3_Task(void *argument)
+{
+  while(true)
+  {
+    HAL_GPIO_TogglePin(LED_D3_GPIO_Port, LED_D3_Pin);
+    osDelay(D3_TIME);
+  }
+}
 
+void D4_Task(void *argument)
+{
+  while(true)
+  {
+    HAL_GPIO_TogglePin(LED_D4_GPIO_Port, LED_D4_Pin);
+    osDelay(D4_TIME);
+  }
+}
 
+void SevenSeg_Task(void *argument)
+{
+  while(true)
+  {
+    MultiFunctionShield_Display(sevenSegCount);
+    sevenSegCount++;
+    if (sevenSegCount == 20) // Extra credit: Suspend D2 at count 20
+    {
+      vTaskSuspend(D2TaskHandle);
+    }
+    osDelay(sevenSegDelay); // Use adjustable delay
+  }
+}
 
-
-
-
-	/*
-     ************  Task-Creation-Part-B *****************
-    */
-	void D2_Task(void *argument)
-		{ while(true)
-			{ HAL_GPIO_TogglePin(LED_D2_GPIO_Port,LED_D2_Pin);
-			  osDelay(D2_time);
-			}
-		}
-
-    /************** STUDENT EDITABLE HERE STARTS HERE *****
-     ************
-     ************  Here's where the definition of the task (the 'callback') gets made
-     ************  See the above one for the D2_Task
-     Put definition of other tasks here
-
-
-     ************** STUDENT EDITABLE HERE ENDS HERE *******
-     */
-
-
+void SevenSeg_Refresh_Task(void *argument)
+{
+  while(true)
+  {
+    MultiFunctionShield__ISRFunc(); // Refresh all digits
+    osDelay(REFRESH_TIME); // 5ms for smooth display
+  }
+}
+/************** STUDENT EDITABLE HERE ENDS HERE *******/
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -493,15 +470,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-/* This task is created automatically and can't be deleted
-*/
-/* Infinite loop */
+  /* Modified to toggle LED_D4 per Part 1.2 */
   for(;;)
   {
-  HAL_GPIO_WritePin(LED_D1_GPIO_Port,LED_D1_Pin,1); //Active low on the multiboard
-  osDelay(D1_time);
+    HAL_GPIO_TogglePin(LED_D4_GPIO_Port, LED_D4_Pin);
+    osDelay(2000); // 2s period for default task
   }
-  // If we goof, exit gracefully
   osThreadTerminate(NULL);
   /* USER CODE END 5 */
 }
@@ -513,7 +487,6 @@ void StartDefaultTask(void *argument)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
